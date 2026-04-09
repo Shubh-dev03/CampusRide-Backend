@@ -2,24 +2,36 @@ const asyncHandler = require("../middlewares/asyncHandler");
 const Ride = require("../models/rideModel");
 const CustomError = require("../utils/customsError");
 
-// # Ride Creation
+// # Create Ride
 const createRide = asyncHandler(async (req, res) => {
   const { from, to, rideTime, rideFare, availableSeats } = req.body;
 
-  //Basic Validation
-  if (!from || !to || !rideTime || !rideFare || availableSeats === null) {
+  // Validation
+  if (!from || !to || !rideTime || !rideFare || availableSeats === undefined) {
     throw new CustomError("All fields are required", 400);
   }
-  //Check if ride already exists at the same time
-  const existingRide = await Ride.findOne({ driver: req.userId, rideTime });
+
+  if (rideFare < 0) {
+    throw new CustomError("Fare cannot be negative", 400);
+  }
+
+  if (availableSeats < 0) {
+    throw new CustomError("Seats cannot be negative", 400);
+  }
+
+  // Prevent duplicate ride at same time
+  const existingRide = await Ride.findOne({
+    driver: req.userId,
+    rideTime,
+  });
 
   if (existingRide) {
     throw new CustomError("Ride already exists at this time", 400);
   }
 
-  //Create new ride
+  // Create ride
   const newRide = await Ride.create({
-    driver,
+    driver: req.userId,
     from,
     to,
     rideTime,
@@ -27,51 +39,40 @@ const createRide = asyncHandler(async (req, res) => {
     availableSeats,
     passengers: [],
   });
+
   res.status(201).json({
     success: true,
-    message: "Ride Created Successfully!",
+    message: "Ride created successfully",
     data: newRide,
   });
 });
 
-// # Show Rides with available seats
-const getAllRides = async (req, res) => {
-  try {
-    const rides = await Ride.find({ availableSeats: { $gt: 0 } });
+// # Get All Rides
+const getAllRides = asyncHandler(async (req, res) => {
+  const rides = await Ride.find({ availableSeats: { $gt: 0 } });
 
-    res.status(200).json({
-      success: true,
-      message: "Rides fetched successfully",
-      data: rides,
-    });
-  } catch (error) {
-    console.log(error);
-    res.status(500).json({
-      success: false,
-      message: "Error fetching rides.",
-    });
-  }
-};
+  res.status(200).json({
+    success: true,
+    message: "Rides fetched successfully",
+    data: rides,
+  });
+});
 
-// # Book Ride Controller
+// # Book Ride
 const bookRide = asyncHandler(async (req, res) => {
   const { rideId } = req.params;
 
   const ride = await Ride.findById(rideId);
+  if (!ride) throw new CustomError("Ride not found", 404);
 
-  // Ride Exists?
-  if (!ride) {
-    throw new CustomError("Ride not found", 404);
-  }
-  // Driver can't book own ride
   if (ride.driver.toString() === req.userId) {
     throw new CustomError("You cannot book your own ride", 400);
   }
-  //Seats Available
+
   if (ride.availableSeats <= 0) {
-    throw new CustomError("No seats available", 404);
+    throw new CustomError("No seats available", 400);
   }
-  // Already Booked
+
   const alreadyBooked = ride.passengers.some(
     (id) => id.toString() === req.userId,
   );
@@ -80,147 +81,136 @@ const bookRide = asyncHandler(async (req, res) => {
     throw new CustomError("You already booked this ride", 400);
   }
 
-  //Add passenger
   ride.passengers.push(req.userId);
-
-  //Reduce passenger
   ride.availableSeats -= 1;
-  //Save
+
   await ride.save();
 
   res.status(200).json({
     success: true,
-    message: "Ride booked Successfully",
+    message: "Ride booked successfully",
     data: ride,
   });
 });
 
-// # Cancel Ride Controller
+// # Cancel Ride
 const cancelRide = asyncHandler(async (req, res) => {
   const { rideId } = req.params;
-  const ride = await Ride.findById(rideId);
 
-  if (!ride) {
-    throw new CustomError("Ride does not exist", 404);
-  }
+  const ride = await Ride.findById(rideId);
+  if (!ride) throw new CustomError("Ride not found", 404);
+
   const isPassenger = ride.passengers.some(
     (id) => id.toString() === req.userId,
   );
+
   if (!isPassenger) {
-    throw new CustomError("You have not booked this ride.", 400);
+    throw new CustomError("You have not booked this ride", 400);
   }
-  // Remove userId from passenger list
+
   ride.passengers = ride.passengers.filter(
     (id) => id.toString() !== req.userId,
   );
-  // Increase Seat
+
   ride.availableSeats += 1;
-  //Save
+
   await ride.save();
+
   res.status(200).json({
     success: true,
-    message: "Ride cancelled successfully!!",
+    message: "Ride cancelled successfully",
     data: ride,
   });
 });
 
-// # MyBookings
-const myBookings = async (req, res) => {
-  try {
-    const userId = req.userId;
+// # My Bookings
+const myBookings = asyncHandler(async (req, res) => {
+  const rides = await Ride.find({ passengers: req.userId });
 
-    const rides = await Ride.find({
-      passengers: userId,
-    });
+  res.status(200).json({
+    success: true,
+    message: rides.length === 0 ? "No bookings found" : "Your bookings",
+    data: rides,
+  });
+});
 
-    if (rides.length === 0) {
-      return res.status(200).json({
-        succes: true,
-        message: "No Bookings found",
-        data: [],
-      });
-    }
+// # My Rides
+const myRides = asyncHandler(async (req, res) => {
+  const rides = await Ride.find({ driver: req.userId }).populate(
+    "passengers",
+    "name email",
+  );
 
-    res.status(200).json({
-      success: true,
-      message: "Your Bookings :",
-      data: rides,
-    });
-  } catch (error) {
-    console.log("CustomError is :", error);
-    res.status(500).json({
-      success: false,
-      message: "MyBookings API failed.",
-    });
+  res.status(200).json({
+    success: true,
+    message: rides.length === 0 ? "No rides posted" : "Your rides",
+    data: rides,
+  });
+});
+
+// # Search Rides
+const searchRides = asyncHandler(async (req, res) => {
+  const { from, to, rideTime } = req.query;
+
+  const query = {
+    availableSeats: { $gt: 0 },
+  };
+
+  if (from) query.from = new RegExp(from.trim(), "i");
+  if (to) query.to = new RegExp(to.trim(), "i");
+  if (rideTime) query.rideTime = rideTime;
+
+  const rides = await Ride.find(query);
+
+  res.status(200).json({
+    success: true,
+    message: "Filtered rides",
+    count: rides.length,
+    data: rides,
+  });
+});
+
+// # Edit Ride
+const editRide = asyncHandler(async (req, res) => {
+  const { rideId } = req.params;
+  const { from, to, rideTime, rideFare, availableSeats } = req.body;
+
+  // At least one field required
+  if (
+    [from, to, rideTime, rideFare, availableSeats].every((v) => v === undefined)
+  ) {
+    throw new CustomError("At least one field is required to update", 400);
   }
-};
 
-// # Display MyRides
-const myRides = async (req, res) => {
-  try {
-    const userId = req.userId;
+  const ride = await Ride.findById(rideId);
+  if (!ride) throw new CustomError("Ride not found", 404);
 
-    const rides = await Ride.find({
-      driver: userId,
-    }).populate("passengers", "name email");
-
-    if (rides.length === 0) {
-      return res.status(200).json({
-        success: true,
-        message: "No rides Posted",
-        data: [],
-      });
-    }
-    res.status(200).json({
-      success: true,
-      message: "Your rides:",
-      data: rides,
-    });
-  } catch (error) {
-    console.log(error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch Rides.",
-    });
+  if (ride.driver.toString() !== req.userId) {
+    throw new CustomError("Unauthorized to edit this ride", 403);
   }
-};
 
-// Filter Rides
-const searchRides = async (req, res) => {
-  try {
-    const { from, to, rideTime } = req.query;
-    let query = {};
-
-    //Build query
-    if (from) {
-      query.from = new RegExp(from.trim(), "i");
-    }
-    if (to) {
-      query.to = new RegExp(to.trim(), "i");
-    }
-    if (rideTime) {
-      query.rideTime = rideTime;
-    }
-    //Only show rides with seats
-    query.availableSeats = { $gt: 0 };
-
-    const rides = await Ride.find(query);
-    console.log("Query : ", req.query);
-
-    res.status(200).json({
-      success: true,
-      message: "Filtered Rides",
-      count: rides.length,
-      data: rides,
-    });
-  } catch (error) {
-    console.log(error);
-    res.status(500).json({
-      success: false,
-      message: "Search filter API failed",
-    });
+  if (rideFare !== undefined && rideFare < 0) {
+    throw new CustomError("Fare cannot be negative", 400);
   }
-};
+
+  if (availableSeats !== undefined && availableSeats < 0) {
+    throw new CustomError("Seats cannot be negative", 400);
+  }
+
+  ride.from = from ?? ride.from;
+  ride.to = to ?? ride.to;
+  ride.rideTime = rideTime ?? ride.rideTime;
+  ride.rideFare = rideFare ?? ride.rideFare;
+  ride.availableSeats = availableSeats ?? ride.availableSeats;
+
+  await ride.save();
+
+  res.status(200).json({
+    success: true,
+    message: "Ride updated successfully",
+    data: ride,
+  });
+});
 
 module.exports = {
   createRide,
@@ -230,4 +220,5 @@ module.exports = {
   myBookings,
   myRides,
   searchRides,
+  editRide,
 };
