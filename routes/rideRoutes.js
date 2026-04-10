@@ -12,6 +12,7 @@ const {
   searchRides,
   createRide,
   editRide,
+  deleteRide,
 } = require("../controllers/rideController");
 
 // Public Routes
@@ -22,6 +23,7 @@ router.get("/search", searchRides);
 router.post("/create", authMiddleware, createRide);
 router.post("/book/:rideId", authMiddleware, bookRide);
 router.post("/cancel/:rideId", authMiddleware, cancelRide);
+router.delete("/:rideId", authMiddleware, deleteRide);
 router.patch("/edit/:rideId", authMiddleware, editRide);
 router.get("/mybookings", authMiddleware, myBookings);
 router.get("/myrides", authMiddleware, myRides);

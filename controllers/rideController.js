@@ -133,6 +133,27 @@ const myBookings = asyncHandler(async (req, res) => {
     data: rides,
   });
 });
+// Delete Ride
+const deleteRide = asyncHandler(async (req, res) => {
+  const { rideId } = req.params;
+
+  const ride = await Ride.findById(rideId);
+
+  if (!ride) {
+    throw new CustomError("Ride not found", 404);
+  }
+
+  if (ride.driver.toString() !== req.userId) {
+    throw new CustomError("Unauthorized to delete this ride", 403);
+  }
+
+  await Ride.findByIdAndDelete(rideId);
+
+  res.status(200).json({
+    success: true,
+    message: "Ride deleted successfully",
+  });
+});
 
 // # My Rides
 const myRides = asyncHandler(async (req, res) => {
@@ -217,6 +238,7 @@ module.exports = {
   getAllRides,
   bookRide,
   cancelRide,
+  deleteRide,
   myBookings,
   myRides,
   searchRides,
