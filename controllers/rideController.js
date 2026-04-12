@@ -1,3 +1,4 @@
+const { default: mongoose } = require("mongoose");
 const asyncHandler = require("../middlewares/asyncHandler");
 const Ride = require("../models/rideModel");
 const CustomError = require("../utils/customsError");
@@ -168,6 +169,38 @@ const myRides = asyncHandler(async (req, res) => {
     data: rides,
   });
 });
+// # Search single Ride by id
+const getRideById = asyncHandler(async (req, res) => {
+  const { rideId } = req.params;
+
+  // Validate ObjectId
+  if (!mongoose.Types.ObjectId.isValid(rideId)) {
+    throw new CustomError("Invalid ride ID", 400);
+  }
+  console.log("Received Id :", rideId);
+
+  //  Find ride and populate driver and passengers
+  const ride = await Ride.findById(rideId).populate("passengers", "name email");
+
+  // Check if ride exists
+  if (!ride) {
+    throw new CustomError("Ride not found", 404);
+  }
+
+  // Only driver and passengers can view ride details
+  if (
+    ride.driver.toString() !== req.userId &&
+    !ride.passengers.some((id) => id.toString() === req.userId)
+  ) {
+    throw new CustomError("Unauthorized to view this ride", 403);
+  }
+  // Response
+  res.status(200).json({
+    success: true,
+    message: "Ride fetched successfully",
+    data: ride,
+  });
+});
 
 // # Search Rides
 const searchRides = asyncHandler(async (req, res) => {
@@ -243,4 +276,5 @@ module.exports = {
   myRides,
   searchRides,
   editRide,
+  getRideById,
 };
