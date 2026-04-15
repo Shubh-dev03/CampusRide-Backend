@@ -126,7 +126,10 @@ const cancelRide = asyncHandler(async (req, res) => {
 
 // # My Bookings
 const myBookings = asyncHandler(async (req, res) => {
-  const rides = await Ride.find({ passengers: req.userId });
+  const rides = await Ride.find({ passengers: req.userId }).populate(
+    "driver",
+    "name email",
+  );
 
   res.status(200).json({
     success: true,
@@ -266,6 +269,20 @@ const editRide = asyncHandler(async (req, res) => {
   });
 });
 
+// #Get all Rides
+const fecthAllRides = asyncHandler(async (req, res) => {
+  const rides = await Ride.find({ availableSeats: { $gt: 0 } });
+
+  if (!rides) {
+    throw new CustomError("API failed to fetch allRides", 500);
+  }
+  res.status(200).json({
+    success: true,
+    message: "All rides fetched successfully",
+    data: rides,
+  });
+});
+
 module.exports = {
   createRide,
   getAllRides,
@@ -274,6 +291,7 @@ module.exports = {
   deleteRide,
   myBookings,
   myRides,
+  fecthAllRides,
   searchRides,
   editRide,
   getRideById,
